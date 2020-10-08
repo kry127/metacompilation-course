@@ -7,32 +7,30 @@
   (provide flow-chart-mix is-evaluable try-eval dynamic-partial-eval)
 
 ;; checks that expression 'expr' can be evaluated in sandbox 'sandbox'
-(define (is-evaluable sandbox expr) (let ([val
-                             (with-handlers ([exn:fail?
-                                              (λ (e) (begin (displayln e) #f))])
-                               (begin (sandbox `(eval ,expr)) #t))
-                             ]) (begin (displayln `(try-is-evaluable ,expr = ,val)) val)
-                                      )
-  )
 
-;  (define (is-evaluable sandbox expr) 
-;                             (with-handlers ([exn:fail?
-;                                              (λ (e) #f)])
-;                               (begin (sandbox `(eval ,expr)) #t))
-;                             )
+(define (is-evaluable sandbox expr) 
+                          (with-handlers ([exn:fail?
+                                           (λ (e) #f)])
+                            (begin (sandbox `(eval ,expr)) #t))
+                          )
 
   
 ;; tries to evaluate expression 'expr' within sandbox 'sandbox'. If it fails, returns it unchanged.
-(define (try-eval sandbox expr) (let ([val (with-handlers ([exn:fail?
-                                              (λ (e) expr)])
-                               (sandbox `(eval ,expr)))])
-                                  (begin (displayln `(try-eval ,expr = ,val)) val)
-                                  )
-                             )
-;  (define (try-eval sandbox expr) (with-handlers ([exn:fail?
-;                                              (λ (e) expr)])
-;                               (sandbox `(eval ,expr)))
-;                             )
+(define (try-eval sandbox expr) (with-handlers ([exn:fail?
+                                           (λ (e) expr)])
+                            (sandbox `(eval ,expr)))
+                          )
+
+(define (is-identifier sandbox expr) (with-handlers ([exn:fail?
+                                           (λ (e) #f)])
+                            (begin (sandbox expr) #t))
+                          )
+  
+(define (try-open-identifier sandbox expr) (with-handlers ([exn:fail?
+                                           (λ (e) expr)])
+                            (sandbox expr))
+                          )
+
 
 ;; partially evaluates the expression
 (define (dynamic-partial-eval sandbox s-expr) (match s-expr
@@ -41,7 +39,7 @@
                                                             (try-eval sandbox s-expr) ; then 'try' to evaluate it
                                                             (match s-expr ; otherwize apply induction over list constructor
                                                               [(cons head tail) (cons (dynamic-partial-eval sandbox head) (dynamic-partial-eval sandbox tail))]
-                                                              [_ s-expr])
+                                                              [_ (if (is-identifier sandbox s-expr) (try-open-identifier sandbox s-expr) s-expr)])
                                                             )]
                                                 )
   )
@@ -81,6 +79,7 @@
     (while-1-body-1 (:= spec-state (set-first pending))  ; extract pair (pp . vs) into 'spec-state'
                     (:= pp (car spec-state))             ; destruct 'spec-state' and extract 'pp'
                     (:= vs (cdr spec-state))             ; destruct 'spec-state' and extract 'vs'
+                    (:= _ (sandbox `(eval '(define-values ,division (apply values ',vs)))))
                     (:= pending    (set-rest pending))   ; and delete it from pending set
                     (:= marked     (set-add marked spec-state)) ; also add extracted pair to 'marked' ones
                     ;; NOTE: inline function find basic block 'bb' by the name of the label 'pp'
@@ -168,14 +167,14 @@
          (:= new_predicate (dynamic-partial-eval sandbox predicate))
          ;(:= _ (begin (print "dynamic-partial-eval result: ") (displayln new_predicate)))
          ;(:= _ (begin (print "partial-eval of: ") (displayln division)))
-         (:= new_vs (dynamic-partial-eval sandbox division))
+         (:= new_vs (dynamic-partial-eval sandbox `,division))
          ;(:= _ (begin (print "dynamic-partial-eval result: ") (displayln new_vs)))
          (:= label_true `(,pp-true . ,new_vs))
          (:= label_false `(,pp-false . ,new_vs))
          (:= pending (if (set-member? marked label_true) pending  (set-add pending label_true)))
          (:= pending (if (set-member? marked label_false) pending (set-add pending label_false)))
          ;(:= _ (begin (print "current pending:") (displayln pending)))
-         (:= new_expr `(if (,new_predicate) ,label_true ,label_false))
+         (:= new_expr `(if ,new_predicate ,label_true ,label_false))
          (:= code (append code `(,new_expr)))
          (goto while-2-cond)
          )
@@ -205,6 +204,7 @@
     
     ; program end
     (halt
+     (:= residual (cons `(__init0 (goto (,pp0 . ,vs0))) residual)) ; append jump to initial block
      (:= header (cdar program)) ; get header of the program
      (:= header (remove* division header)) ; remove static variables from the program list
      (:= header (append '(read) header)) ; add 'read' heading to the program

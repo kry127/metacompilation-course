@@ -103,7 +103,7 @@
              (:= step (cadddr instruction))
              (if (equal? expr element) find-step next-step)
              )
-    ;; step executionы
+    ;; step execution
     
     ; program termination
     ;    * Input parameter: "left" and "right" sides of the tape
@@ -126,12 +126,12 @@
 
 (define (jump-to label blocks-ast)
   (let* (
-         [labeled-block (assq label blocks-ast)]
+         [labeled-block (assoc label blocks-ast)]
          [block (cdr labeled-block)]
          )
     (let-values ([(assignments jump) (prefix block)])
       ;(call-with-values (lambda () (prefix block)) program-execution (prefix block) blocks-ast)
-      (begin ;;; (print "jump:") (displayln label)
+      (begin (print "jump:") (displayln label)
              (program-execution assignments (car jump) blocks-ast))
       )
   ))
@@ -189,4 +189,13 @@
 
 
 ; launch flow-chart-mix on Turing Machine interpreter
-(flow-chart-int flow-chart-mix `(,turing_machine (program prog instruction instruction-operator) (,tm-example ,tm-example () ())))
+(define mixed-TM-interpreter (flow-chart-int flow-chart-mix `(,turing_machine (program prog instruction instruction-operator expr step) (,tm-example ,tm-example () () () ()))))
+; print out program
+mixed-TM-interpreter
+; try to execute partially specialized program
+(flow-chart-int mixed-TM-interpreter '((1 1 3 5 2 4 0)))
+
+; second futamura projection
+(define tm-compiler (flow-chart-int flow-chart-mix `(,flow-chart-mix (program division) (,turing_machine (program prog instruction instruction-operator expr step)))))
+tm-compiler
+(flow-chart-int tm-compiler `((,tm-example ,tm-example () () () ())))
