@@ -131,7 +131,7 @@
          )
     (let-values ([(assignments jump) (prefix block)])
       ;(call-with-values (lambda () (prefix block)) program-execution (prefix block) blocks-ast)
-      (begin (print "jump:") (displayln label)
+      (begin ;;; (print "jump:") (displayln label)
              (program-execution assignments (car jump) blocks-ast))
       )
   ))
@@ -167,17 +167,52 @@
     )
   )
 
+;; pretty printer for flowchart program
+(define (fc-pp-substitute-instruction mapping instruction)
+  (match instruction
+                                                    [`(if ,expr ,label-true ,label-false) `(if ,expr ,(hash-ref mapping label-true) ,(hash-ref mapping label-false))]
+                                                    [`(goto ,label) `(goto ,(hash-ref mapping label))]
+                                                    [other instruction]
+                                                    ))
+(define (fc-pp-substitute-instructions mapping bb)
+  (match bb
+    [(cons instruction bb) (cons (fc-pp-substitute-instruction mapping instruction) (fc-pp-substitute-instructions mapping bb))]
+    [instruction (fc-pp-substitute-instruction mapping instruction)]
+    ))
+
+(define (fc-pp-substitute-block mapping bb)
+  (cons (hash-ref mapping (car bb)) (fc-pp-substitute-instructions mapping (cdr bb)))
+  )
+
+(define (fc-pp-substitute-blocks mapping blocks)
+  (match blocks
+    [(cons block blocks) (cons (fc-pp-substitute-block mapping block) (fc-pp-substitute-blocks mapping blocks))]
+    ['() '()]))
+
+(define (fc-pp-substitute-program mapping program)
+  (cons (car program) (fc-pp-substitute-blocks mapping (cdr program)))
+  )
+
+(define (flow-chart-pretty-printer program-ast)
+  (match program-ast
+    [(cons header blocks)
+     (let ([label-mapping (make-hash (map (lambda (x y) (list (car x) y)) blocks (build-list (length blocks) (lambda (x) (format "label~s" x)))))])
+                            (list label-mapping (fc-pp-substitute-program label-mapping program-ast)))
+     ]
+  )
+  )
+
 
 ;; tests
 
 ; launch Flow Chart program with Racket interpreter
-(flow-chart-int find_name '(y (x y z) (1 2 3)))
+;(flow-chart-int find_name '(y (x y z) (1 2 3)))
 ; the expected output is '2
 
   
 ; launch Turing Machine with Flow Chart interpreter written on Racket
-(flow-chart-int turing_machine `(,tm-example (1 1 1 1 0 1 0 1 1 0 1)))
-(flow-chart-int turing_machine `(,tm-left-expander (1 2 3)))
+;(flow-chart-int turing_machine `(,tm-example (1 1 1 1 0 1 0 1 1 0 1)))
+;(flow-chart-int turing_machine `(,tm-left-expander (1 2 3)))
 
 
 ; launch flow-chart-mix on 'find name' program
@@ -189,13 +224,33 @@
 
 
 ; launch flow-chart-mix on Turing Machine interpreter
-(define mixed-TM-interpreter (flow-chart-int flow-chart-mix `(,turing_machine (program prog instruction instruction-operator expr step) (,tm-example ,tm-example () () () ()))))
+;(define mixed-TM-interpreter (flow-chart-int flow-chart-mix `(,turing_machine ; program to specialize
+;                                                              (
+;                                                               (program prog instruction instruction-operator expr step) ; static
+;                                                               (left right element) ; dynamic
+;                                                              ) ; division
+;                                                              (,tm-example ,tm-example () () () ()) ; initial values of static variables
+;                                                              )))
 ; print out program
-mixed-TM-interpreter
+;mixed-TM-interpreter
 ; try to execute partially specialized program
-(flow-chart-int mixed-TM-interpreter '((1 1 3 5 2 4 0)))
+;(flow-chart-int mixed-TM-interpreter '((1 1 3 5 2 4 0)))
 
 ; second futamura projection
-(define tm-compiler (flow-chart-int flow-chart-mix `(,flow-chart-mix (program division) (,turing_machine (program prog instruction instruction-operator expr step)))))
-tm-compiler
-(flow-chart-int tm-compiler `((,tm-example ,tm-example () () () ())))
+(define tm-compiler (flow-chart-int flow-chart-mix `(,flow-chart-mix ; program to specialize
+                                                     (
+                                                      (program division pp0) ; static
+                                                      (pending marked residual env bb code labeled-blockresidual pp vs spec-state command
+                                                               X X-newval newexpr predicate next-label new_predicate new_vs label_true label_false) ; dynamic
+                                                      )
+                                                     (,turing_machine ; = program
+                                                      (
+                                                       (program prog instruction instruction-operator expr step) ; static
+                                                       (left right element) ; dynamic)
+                                                       ) ; = division
+                                                      () 
+                                                     ) ; initial values of static variables
+                                                     )))
+
+(flow-chart-pretty-printer tm-compiler)
+(flow-chart-int (cadr (flow-chart-pretty-printer tm-compiler)) `((,tm-example ,tm-example () () () ())))

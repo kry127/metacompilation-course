@@ -1,64 +1,52 @@
 
 (module fc-mix racket
   
+  (require racket/sandbox)
+  
   (provide flow-chart-mix)
-  (provide envHasKey envAssoc setEnv updateEnv substitute is-evaluable try-eval)
+  (provide flow-chart-mix is-evaluable try-eval dynamic-partial-eval)
 
-  ;;;; ENV UTILITIES
-  ;; checks that key is in the environment
-  (define (envHasKey name env) (match env
-                                 [(cons e env) (if (equal? (car e) name) #t (envHasKey name env))]
-                                 [_ #f]))
-
-  ;; same as (assoc name env)
-  (define (envAssoc name env) (match env
-                                [(cons e env) (if (equal? (car e) name) (cadr e) (envAssoc name env))]
-                                [_ error "Key not found"]))
-
-  ;; add name=val to environment
-  (define (setEnv name val env) (match env
-                                  [(cons e env) (if (equal? (car e) name) (cons (list name val) env) (cons e (setEnv name val env)))]
-                                  [_ (cons (list name val) '())]))
+;; checks that expression 'expr' can be evaluated in sandbox 'sandbox'
+(define (is-evaluable sandbox expr) 
+                          (with-handlers ([exn:fail?
+                                           (λ (e) #f)])
+                            (begin (sandbox `(eval ,expr)) #t))
+                          )
 
   
-  ;; update env with mappint from newEnv
-  (define (updateEnv newEnv env) (match newEnv
-                                  [(cons e newEnv) (setEnv (car e) (cadr e) (updateEnv newEnv env))]
-                                  [_ env]))
+;; tries to evaluate expression 'expr' within sandbox 'sandbox'. If it fails, returns it unchanged.
+(define (try-eval sandbox expr) (with-handlers ([exn:fail?
+                                           (λ (e) expr)])
+                            (sandbox `(eval ,expr)))
+                          )
 
-  ;; partially substitutes env variables into expression
-  (define (substitute env expr [quoted #f]) (match expr
-                                  [`',_ expr] ; ignore double quoted literals
-                                  [expr (match expr ; otherwize apply induction over list constructor
-                                          [(cons head tail) (cons (substitute env head quoted) (substitute env tail quoted))]
-                                          [_ (if (envHasKey expr env)
-                                                 (if quoted `',(envAssoc expr env) (envAssoc expr env))
-                                                 expr)])
-                                        ])
-    )
-
-  ;; checks that expression 'expr' can be evaluated with respect to dynamic variables 'dynamic'
-    (define (is-evaluable dynamic expr) (match expr
-                                  [`',_ #t] ; ignore double quoted literals
-                                  [expr (match expr ; otherwize apply induction over list constructor
-                                          [(cons head tail) (and (is-evaluable dynamic head) (is-evaluable dynamic tail))]
-                                          [_ (if (member expr dynamic) #f #t)])
-                                        ])
-    )
-
+(define (is-identifier sandbox expr) (with-handlers ([exn:fail?
+                                           (λ (e) #f)])
+                            (begin (sandbox expr) #t))
+                          )
   
-  ;; tries to evaluate expression 'expr' within sandbox 'sandbox'. If it fails, returns it unchanged.
-  (define (try-eval env expr) (let ([exprSub (substitute env expr #t)]) (with-handlers ([exn:fail?
-                                                                                      (λ (e) (begin (displayln e) exprSub))])
-                                                                       (eval exprSub))
-                                )
-    )
-  ;;;; ENV UTILITIES
+(define (try-open-identifier sandbox expr) (with-handlers ([exn:fail?
+                                           (λ (e) expr)])
+                            (sandbox expr))
+                          )
+
+
+;; partially evaluates the expression
+(define (dynamic-partial-eval sandbox s-expr) (match s-expr
+                                                [`',_ s-expr] ; ignore double quoted literals
+                                                [s-expr (if (is-evaluable sandbox s-expr) ; if expression is fully evaluatable
+                                                            (try-eval sandbox s-expr) ; then 'try' to evaluate it
+                                                            (match s-expr ; otherwize apply induction over list constructor
+                                                              [(cons head tail) (cons (dynamic-partial-eval sandbox head) (dynamic-partial-eval sandbox tail))]
+                                                              [_ (if (is-identifier sandbox s-expr) (try-open-identifier sandbox s-expr) s-expr)])
+                                                            )]
+                                                )
+  )
 
 ; 1. Flow chart specializer written on flow chart for flow chart
 
 ; data definition:
-(define division-example '((a b c) (x y z))) ;; BOTH static and dynamic should be specified
+(define division-example '(x y z))
 (define vs0-example '(0 1 "asdf"))
 ; Returns tail from element, or #f if not found:
 ;  (member 'y division-example)
@@ -68,26 +56,33 @@
     ;; program input data + initialization block
     (read program division vs0)
     (init
-          (:= env (map list (car division) vs0)) ; create initial env for computations (zip (car division) and vs0)
-          ;; (:= env (setEnv 'st-division (car division) env)) ; ??? for what
+          (:= sandbox (make-evaluator 'racket)) ; create sandbox for computations
+          (:= _ (sandbox '(require racket/sandbox))) ; add dependencies to the sandbox
+          ; first of all, assign all static variables listed in 'division' corresponding value from 'vs0' in sandbox environment
+          ;   see issue here: https://stackoverflow.com/questions/28947041/unbound-identifier-racket-operators
+          (:= _ (sandbox `(eval '(define-values ,division (apply values ',vs0)))))
+          (:= _ (sandbox `(eval '(define division ',division ))))
               
           (:= pp0 (caadr program)) ; get initial label
           (:= pending (set `(,pp0 . ,vs0))) ; set initial state (label . values static)
+          ; (:= _ (begin (println "DISPLAY pp0: ") (displayln pp0)))
+          ; (:= _ (begin (println "DISPLAY vs0: ") (displayln vs0)))
+          ; (:= _ (begin (println "DISPLAY pending: ") (displayln pending)))
           (:= marked (set)) ; create set of marked specialized blocks
           (:= residual '()) ; create stub of the specialized programm (result of the mix)
           (goto while-1-cond)
           )
 
-    ;; while pending != <empty> we have blocks 'pp' to specialize with static values from 'vs'
+    ;; while pending != <empty> we have blocks 'pp' to specialize with static values 'vs' of variables 'division'
     (while-1-cond (if (set-empty? pending) halt while-1-body-1))
     (while-1-body-1 (:= spec-state (set-first pending))  ; extract pair (pp . vs) into 'spec-state'
                     (:= pp (car spec-state))             ; destruct 'spec-state' and extract 'pp'
                     (:= vs (cdr spec-state))             ; destruct 'spec-state' and extract 'vs'
-                    (:= env (updateEnv (map list (car division) vs) env))
+                    (:= _ (sandbox `(eval '(define-values ,division (apply values ',vs)))))
                     (:= pending    (set-rest pending))   ; and delete it from pending set
                     (:= marked     (set-add marked spec-state)) ; also add extracted pair to 'marked' ones
                     ;; NOTE: inline function find basic block 'bb' by the name of the label 'pp'
-                    (:= labeled-block (assoc pp program)) ; extract labeled basic block
+                    (:= labeled-block (assq pp program)) ; extract labeled basic block
                     (:= bb (cdr labeled-block))          ; extract basic block (with goto)
                     ;; create buffer for commands 'code'. Algorithm suggests to make it labeled
                     (:= code `((,pp . ,vs)))
@@ -125,23 +120,21 @@
         (while-2-body-switch-case-1-assign
          (:= X (cadr command))   ; extract a variable of assignment
          (:= expr (caddr command)) ; extract an expression of assignment
-         (:= _ (println (format "division=~s, X=~s, is_static=~s " division X (member X (car division)))))
-         (if (member X (car division)) ; if X is static by division (expr should be static)
+         (if (member X division) ; if X is static by division (expr should be static)
              while-2-body-switch-case-1-assign-static
              while-2-body-switch-case-1-assign-dynamic)
          )
         
         (while-2-body-switch-case-1-assign-static
-         (:= _ (begin (print "static assign of: ") (displayln expr)))
-         (:= X-newval (try-eval env expr))
-         (:= _ (begin (print "static assign result: ") (displayln X-newval)))
-         (:= env (setEnv X X-newval env))
+         ;(:= _ (begin (print "static assign of: ") (displayln expr)))
+         (:= X-newval (sandbox `(eval ',expr)))
+         (:= _ (sandbox `(define ,X ',X-newval)))
          (goto while-2-cond)
          )
         (while-2-body-switch-case-1-assign-dynamic
-         (:= _ (begin (print "dynamic-partial-eval of: ") (displayln expr)))
-         (:= newexpr (substitute env expr #t))
-         (:= _ (begin (print "dynamic-partial-eval result: ") (displayln newexpr)))
+         ;(:= _ (begin (print "dynamic-partial-eval of: ") (displayln expr)))
+         (:= newexpr (dynamic-partial-eval sandbox expr))
+         ;(:= _ (begin (print "dynamic-partial-eval result: ") (displayln newexpr)))
          (:= code (append code `((:= ,X ,newexpr))))
          (goto while-2-cond)
          )
@@ -158,37 +151,28 @@
          (:= predicate (cadr command))   ; extract a branching condition
          (:= pp-true (caddr command))    ; true label
          (:= pp-false (cadddr command))   ; false label
-         
-         (:= _ (begin (print "while-2-body-switch-case-1-if predicate=") (display predicate)))
-         (:= _ (begin (print "; env=") (display env)))
-         (:= _ (begin (print "; is-evaluatable=") (display (is-evaluable (cadr division) predicate))))
-         (:= _ (begin (print "; eval=") (displayln (try-eval env predicate))))
-         (if  (is-evaluable (cadr division) predicate) ; if X is static by division (!!!)
+         (if  (is-evaluable sandbox predicate) ; if X is static by division
              while-2-body-switch-case-1-if-static
              while-2-body-switch-case-1-if-dynamic)
          )
         
         (while-2-body-switch-case-1-if-static
-         (:= _ (begin (print "while-2-body-switch-case-1-if-static predicate=") (display predicate)))
-         (:= _ (begin (print "; env=") (display env)))
-         (:= _ (begin (print "; evaluates in=") (displayln (try-eval env predicate))))
-         (:= next-label (if  (try-eval env predicate) pp-true pp-false))
-         (:= _ (begin (print "; if-static next-label=") (displayln next-label)))
+         (:= next-label (if  (sandbox `(eval ,predicate)) pp-true pp-false))
          (goto while-2-transition-compression)
          )
         
         (while-2-body-switch-case-1-if-dynamic
          ;(:= _ (begin (print "dynamic-partial-eval of: ") (displayln predicate)))
-         (:= new_predicate (substitute env predicate #t))
+         (:= new_predicate (dynamic-partial-eval sandbox predicate))
          ;(:= _ (begin (print "dynamic-partial-eval result: ") (displayln new_predicate)))
-         (:= _ (begin (print "partial-eval of: ") (displayln (car division))))
-         (:= new_vs (substitute env (car division)))
-         (:= _ (begin (print "dynamic-partial-eval result: ") (displayln new_vs)))
+         ;(:= _ (begin (print "partial-eval of: ") (displayln division)))
+         (:= new_vs (dynamic-partial-eval sandbox `,division))
+         ;(:= _ (begin (print "dynamic-partial-eval result: ") (displayln new_vs)))
          (:= label_true `(,pp-true . ,new_vs))
          (:= label_false `(,pp-false . ,new_vs))
          (:= pending (if (set-member? marked label_true) pending  (set-add pending label_true)))
          (:= pending (if (set-member? marked label_false) pending (set-add pending label_false)))
-         (:= _ (begin (print "current pending:") (displayln pending)))
+         ;(:= _ (begin (print "current pending:") (displayln pending)))
          (:= new_expr `(if ,new_predicate ,label_true ,label_false))
          (:= code (append code `(,new_expr)))
          (goto while-2-cond)
@@ -198,7 +182,8 @@
          ;; return
         (while-2-body-switch-case-1-return
          (:= expr (cadr command))   ; extract return statement
-         (:= newexpr (substitute env expr #t)) ; specialize it
+         ; (:= newexpr (sandbox `(partial-eval ,expr ,division))) ; specialize it
+         (:= newexpr (dynamic-partial-eval sandbox expr)) ; specialize it
          (:= new_stmt `(return ,newexpr)) ; construct new statement
          (:= code (append code `(,new_stmt))) ; add it to 'poly'
          (goto while-2-cond) ; and go back to while-2 loop
@@ -210,7 +195,7 @@
           ;; input parameter: next-label
           (while-2-transition-compression
            ;; NOTE: inline function find basic block 'bb' by the name of the label 'next-label'
-           (:= labeled-block (assoc next-label program)) ; extract labeled basic block
+           (:= labeled-block (assq next-label program)) ; extract labeled basic block
            (:= bb (cdr labeled-block))          ; extract basic block (with goto)
            ; transition compression happened
            (goto while-2-cond)
@@ -220,7 +205,7 @@
     (halt
      (:= residual (cons `(__init0 (goto (,pp0 . ,vs0))) residual)) ; append jump to initial block
      (:= header (cdar program)) ; get header of the program
-     (:= header (remove* (car division) header)) ; remove static variables from the program list
+     (:= header (remove* division header)) ; remove static variables from the program list
      (:= header (append '(read) header)) ; add 'read' heading to the program
      (:= residual (cons header residual)) ; left the rest for the specializer
      (return residual)
