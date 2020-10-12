@@ -1,7 +1,7 @@
 
 (module fc-mix racket
   
-  (provide flow-chart-mix)
+  (provide flow-chart-mix-no-trick)
   (provide envHasKey envAssoc setEnv updateEnv substitute is-evaluable try-eval)
 
   ;;;; ENV UTILITIES
@@ -63,56 +63,43 @@
 ; Returns tail from element, or #f if not found:
 ;  (member 'y division-example)
 
-(define flow-chart-mix
+(define flow-chart-mix-no-trick
   '(
     ;; program input data + initialization block
     (read program division vs0)
     (init
-          (:= env (map list (car division) vs0)) ; [D] create initial env for computations (zip (car division) and vs0)
+          (:= env (map list (car division) vs0)) ; create initial env for computations (zip (car division) and vs0)
+          ;; (:= env (setEnv 'st-division (car division) env)) ; ??? for what
               
-          (:= pp0 (caadr program)) ; [S] get initial label
-          (:= pending (set `(,pp0 . ,vs0))) ; [D] set initial state (label . values static)
-          (:= marked (set)) ; [D] create set of marked specialized blocks
-          (:= pending-lables (set pp0)) ; [S] set of labeles for 'The Trick
-          (:= residual '()) ; [D] create stub of the specialized programm (result of the mix)
+          (:= pp0 (caadr program)) ; get initial label
+          (:= pending (set `(,pp0 . ,vs0))) ; set initial state (label . values static)
+          (:= marked (set)) ; create set of marked specialized blocks
+          (:= residual '()) ; create stub of the specialized programm (result of the mix)
           (goto while-1-cond)
           )
 
     ;; while pending != <empty> we have blocks 'pp' to specialize with static values from 'vs'
     (while-1-cond (if (set-empty? pending) halt while-1-body-1))
-    (while-1-body-1 (:= spec-state (set-first pending))  ; [D] extract pair (pp . vs) into 'spec-state'
-                    (:= ppd (car spec-state))             ; [D] destruct 'spec-state' and extract 'ppd'
-                    (:= vs (cdr spec-state))             ; [D] destruct 'spec-state' and extract 'vs'
+    (while-1-body-1 (:= spec-state (set-first pending))  ; extract pair (pp . vs) into 'spec-state'
+                    (:= pp (car spec-state))             ; destruct 'spec-state' and extract 'pp'
+                    (:= vs (cdr spec-state))             ; destruct 'spec-state' and extract 'vs'
                     (:= env (updateEnv (map list (car division) vs) env))
                     (:= pending    (set-rest pending))   ; and delete it from pending set
                     (:= marked     (set-add marked spec-state)) ; also add extracted pair to 'marked' ones
-                    ;; convert DYNAMIC ppd to static pp
-                    (:= pending-lables-iter pending-lables)
-                    (goto while-3-cond))
-    
-    (while-3-cond (if (set-empty? pending-lables-iter) error-no-such-static-label while-3-body))
-    (while-3-body (:= pp (set-first pending-lables-iter))
-                  (:= pending-lables-iter (set-rest pending-lables-iter))
-                  (if (equal? pp ppd)
-                      while-1-body-2
-                      while-3-cond
-                  ))
-    (while-1-body-2 
                     ;; NOTE: inline function find basic block 'bb' by the name of the label 'pp'
-                    ;(:= _ (print (format "Chosen label from The Trick: ~s" pp)))
                     (:= labeled-block (assoc pp program)) ; extract labeled basic block
                     (:= bb (cdr labeled-block))          ; extract basic block (with goto)
                     ;; create buffer for commands 'code'. Algorithm suggests to make it labeled
                     (:= code `((,pp . ,vs)))
                     (goto while-2-cond) ; goto inner 'while-2' block (condition section)
                     )
-    (while-1-body-3 (:= residual (cons code residual))  ; when cycle 'while-2' is over, add generated block into residual with label 'pp'
+    (while-1-body-2 (:= residual (cons code residual))  ; when cycle 'while-2' is over, add generated block into residual with label 'pp'
                     (goto while-1-cond)                 ; then move back to 'while-1' condition checking
                     )
 
     ;; while bb != <empty> analyze every incoming statement and build 'code' specialized block
     (while-2-cond ;(:= _ (begin (println ">>> while2.code=") (println code)))
-                  (if (empty? bb) while-1-body-3 while-2-body))
+                  (if (empty? bb) while-1-body-2 while-2-body))
     (while-2-body (:= command (car bb)) ; chop next command from basic block 'bb'
                   (:= bb (cdr bb))      ; assign the rest to the basic block 'bb' itself
                   (goto while-2-body-switch-case-1-1) ; switch-case on 'command' type
@@ -138,23 +125,23 @@
         (while-2-body-switch-case-1-assign
          (:= X (cadr command))   ; extract a variable of assignment
          (:= expr (caddr command)) ; extract an expression of assignment
-         ;(:= _ (println (format "division=~s, X=~s, is_static=~s " division X (member X (car division)))))
+         (:= _ (println (format "division=~s, X=~s, is_static=~s " division X (member X (car division)))))
          (if (member X (car division)) ; if X is static by division (expr should be static)
              while-2-body-switch-case-1-assign-static
              while-2-body-switch-case-1-assign-dynamic)
          )
         
         (while-2-body-switch-case-1-assign-static
-         ;(:= _ (begin (print "static assign of: ") (displayln expr)))
+         (:= _ (begin (print "static assign of: ") (displayln expr)))
          (:= X-newval (try-eval env expr))
-         ;(:= _ (begin (print "static assign result: ") (displayln X-newval)))
+         (:= _ (begin (print "static assign result: ") (displayln X-newval)))
          (:= env (setEnv X X-newval env))
          (goto while-2-cond)
          )
         (while-2-body-switch-case-1-assign-dynamic
-         ;(:= _ (begin (print "dynamic-partial-eval of: ") (displayln expr)))
+         (:= _ (begin (print "dynamic-partial-eval of: ") (displayln expr)))
          (:= newexpr (substitute env expr #t))
-         ;(:= _ (begin (print "dynamic-partial-eval result: ") (displayln newexpr)))
+         (:= _ (begin (print "dynamic-partial-eval result: ") (displayln newexpr)))
          (:= code (append code `((:= ,X ,newexpr))))
          (goto while-2-cond)
          )
@@ -172,30 +159,21 @@
          (:= pp-true (caddr command))    ; true label
          (:= pp-false (cadddr command))   ; false label
          
-         ;(:= _ (begin (print "while-2-body-switch-case-1-if predicate=") (display predicate)))
-         ;(:= _ (begin (print "; env=") (display env)))
-         ;(:= _ (begin (print "; is-evaluatable=") (display (is-evaluable (cadr division) predicate))))
-         ;(:= _ (begin (print "; eval=") (displayln (try-eval env predicate))))
+         (:= _ (begin (print "while-2-body-switch-case-1-if predicate=") (display predicate)))
+         (:= _ (begin (print "; env=") (display env)))
+         (:= _ (begin (print "; is-evaluatable=") (display (is-evaluable (cadr division) predicate))))
+         (:= _ (begin (print "; eval=") (displayln (try-eval env predicate))))
          (if  (is-evaluable (cadr division) predicate) ; if X is static by division (!!!)
              while-2-body-switch-case-1-if-static
              while-2-body-switch-case-1-if-dynamic)
          )
         
         (while-2-body-switch-case-1-if-static
-         ;(:= _ (begin (print "while-2-body-switch-case-1-if-static predicate=") (display predicate)))
-         ;(:= _ (begin (print "; env=") (display env)))
-         ;(:= _ (begin (print "; evaluates in=") (displayln (try-eval env predicate))))
-         (if  (try-eval env predicate)
-              while-2-body-switch-case-1-if-static-true
-              while-2-body-switch-case-1-if-static-false)
-         )
-
-        (while-2-body-switch-case-1-if-static-true
-         (:= next-label pp-true)
-         (goto while-2-transition-compression)
-         )
-        (while-2-body-switch-case-1-if-static-false
-         (:= next-label pp-false)
+         (:= _ (begin (print "while-2-body-switch-case-1-if-static predicate=") (display predicate)))
+         (:= _ (begin (print "; env=") (display env)))
+         (:= _ (begin (print "; evaluates in=") (displayln (try-eval env predicate))))
+         (:= next-label (if  (try-eval env predicate) pp-true pp-false))
+         (:= _ (begin (print "; if-static next-label=") (displayln next-label)))
          (goto while-2-transition-compression)
          )
         
@@ -203,28 +181,18 @@
          ;(:= _ (begin (print "dynamic-partial-eval of: ") (displayln predicate)))
          (:= new_predicate (substitute env predicate #t))
          ;(:= _ (begin (print "dynamic-partial-eval result: ") (displayln new_predicate)))
-         
-         ; reset as most static variables as we can
-         (:= pp '())
-         (:= labeled-block '())
-         (:= bb '())
-         (:= command '())
-         (:= X '())
-         (:= expr '())
-         
-         ;(:= _ (begin (print "partial-eval of: ") (displayln (car division))))
+         (:= _ (begin (print "partial-eval of: ") (displayln (car division))))
          (:= new_vs (substitute env (car division)))
-         ;(:= _ (begin (print "dynamic-partial-eval result: ") (displayln new_vs)))
+         (:= _ (begin (print "dynamic-partial-eval result: ") (displayln new_vs)))
          (:= label_true `(,pp-true . ,new_vs))
          (:= label_false `(,pp-false . ,new_vs))
          (:= pending (if (set-member? marked label_true) pending  (set-add pending label_true)))
          (:= pending (if (set-member? marked label_false) pending (set-add pending label_false)))
-         (:= pending-lables (set-add pending-lables pp-true))
-         (:= pending-lables (set-add pending-lables pp-false))
-         ;(:= _ (begin (print "current pending:") (displayln pending)))
+         (:= _ (begin (print "current pending:") (displayln pending)))
          (:= new_expr `(if ,new_predicate ,label_true ,label_false))
          (:= code (append code `(,new_expr)))
-         (goto while-2-cond))
+         (goto while-2-cond)
+         )
 
          
          ;; return
@@ -241,7 +209,6 @@
 
           ;; input parameter: next-label
           (while-2-transition-compression
-           ;(:= _ (begin (print "; transition-compression next-label=") (displayln next-label)))
            ;; NOTE: inline function find basic block 'bb' by the name of the label 'next-label'
            (:= labeled-block (assoc next-label program)) ; extract labeled basic block
            (:= bb (cdr labeled-block))          ; extract basic block (with goto)
@@ -260,8 +227,7 @@
      )
 
     ; error handlers
-    (error-no-such-command (return (format "NO SUCH COMMAND ~s in block ~s" command (assoc pp program))))
-    (error-no-such-static-label (return (format "NO SUCH STATIC LABEL ~s" ppd)))
+    (error-no-such-command (return "NO SUCH COMMAND"))
     )
   )
   )

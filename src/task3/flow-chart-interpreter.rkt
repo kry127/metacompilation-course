@@ -206,51 +206,78 @@
 ;; tests
 
 ; launch Flow Chart program with Racket interpreter
-;(flow-chart-int find_name '(y (x y z) (1 2 3)))
+(flow-chart-int find_name '(y (x y z) (1 2 3)))
 ; the expected output is '2
 
   
 ; launch Turing Machine with Flow Chart interpreter written on Racket
-;(flow-chart-int turing_machine `(,tm-example (1 1 1 1 0 1 0 1 1 0 1)))
-;(flow-chart-int turing_machine `(,tm-left-expander (1 2 3)))
+(flow-chart-int turing_machine `(,tm-example (1 1 1 1 0 1 0 1 1 0 1)))
+(flow-chart-int turing_machine `(,tm-left-expander (1 2 3)))
 
 
 ; launch flow-chart-mix on 'find name' program
-;(define mixed-find-name (flow-chart-int flow-chart-mix `(,find_name (name namelist) (z (x y z)))))
+(define mixed-find-name (flow-chart-int flow-chart-mix `(,find_name ((name namelist) (valuelist)) (z (x y z)))))
 ; print out program:
-;mixed-find-name
+; mixed-find-name
 ; try to execute partially specialized program
-;(flow-chart-int mixed-find-name '((1 2 3)))
+(flow-chart-int mixed-find-name '((1 2 3)))
 
 
 ; launch flow-chart-mix on Turing Machine interpreter
-;(define mixed-TM-interpreter (flow-chart-int flow-chart-mix `(,turing_machine ; program to specialize
-;                                                              (
-;                                                               (program prog instruction instruction-operator expr step) ; static
-;                                                               (left right element) ; dynamic
-;                                                              ) ; division
-;                                                              (,tm-example ,tm-example () () () ()) ; initial values of static variables
-;                                                              )))
+(define mixed-TM-interpreter (flow-chart-int flow-chart-mix `(,turing_machine ; program to specialize
+                                                              (
+                                                               (program prog instruction instruction-operator expr step) ; static
+                                                               (left right element) ; dynamic
+                                                              ) ; division
+                                                              (,tm-example ,tm-example () () () ()) ; initial values of static variables
+                                                              )))
 ; print out program
-;mixed-TM-interpreter
+mixed-TM-interpreter
 ; try to execute partially specialized program
-;(flow-chart-int mixed-TM-interpreter '((1 1 3 5 2 4 0)))
+(flow-chart-int mixed-TM-interpreter '((1 1 3 5 2 4 0)))
 
-; second futamura projection
+; second futamura projection WITHOUT TRICK
+;(define tm-compiler (flow-chart-int flow-chart-mix-no-trick `(,flow-chart-mix ; program to specialize
+;                                                              (
+;                                                               (program division pp0) ; static
+;                                                               (pending marked residual env bb code labeled-blockresidual pp vs spec-state command
+;                                                                        X X-newval newexpr predicate next-label new_predicate new_vs label_true label_false) ; dynamic
+;                                                               )
+;                                                              (,turing_machine ; = program
+;                                                               (
+;                                                                (program prog instruction instruction-operator expr step) ; static
+;                                                                (left right element) ; dynamic)
+;                                                                ) ; = division
+;                                                               () 
+;                                                               ) ; initial values of static variables
+;                                                              )))
+
+; pretty print program (returns pair of mapping of real labels to new labels + relabeled program itself)
+;(flow-chart-pretty-printer tm-compiler)
+; check that compiler converts 'tm-example' program from turing language to flow-chart language
+;(flow-chart-int (cadr (flow-chart-pretty-printer tm-compiler)) `((,tm-example ,tm-example () () () ())))
+
+
+; second futamura projection, better than 'The Trick'!
 (define tm-compiler (flow-chart-int flow-chart-mix `(,flow-chart-mix ; program to specialize
-                                                     (
-                                                      (program division pp0) ; static
-                                                      (pending marked residual env bb code labeled-blockresidual pp vs spec-state command
-                                                               X X-newval newexpr predicate next-label new_predicate new_vs label_true label_false) ; dynamic
-                                                      )
-                                                     (,turing_machine ; = program
-                                                      (
-                                                       (program prog instruction instruction-operator expr step) ; static
-                                                       (left right element) ; dynamic)
-                                                       ) ; = division
-                                                      () 
-                                                     ) ; initial values of static variables
-                                                     )))
+                                                              (
+                                                               (program division pp0 pending-lables pending-lables-iter pp labeled-block bb
+                                                                        command X expr
+                                                                        predicate pp-true pp-false next-label
+                                                                        header) ; static
+                                                               (ppd pending marked residual env code vs spec-state
+                                                                          X-newval newexpr new_predicate new_vs label_true label_false new_expr new_stmt) ; dynamic
+                                                               )
+                                                              (,turing_machine ; = program
+                                                               (
+                                                                (program prog instruction instruction-operator expr step) ; static
+                                                                (left right element) ; dynamic)
+                                                                ) ; = division
+                                                               () () () () () () () () () () () () () () 
+                                                               ) ; initial values of static variables
+                                                              )))
 
+; pretty print program (returns pair of mapping of real labels to new labels + relabeled program itself)
 (flow-chart-pretty-printer tm-compiler)
-(flow-chart-int (cadr (flow-chart-pretty-printer tm-compiler)) `((,tm-example ,tm-example () () () ())))
+; check that compiler converts 'tm-example' program from turing language to flow-chart language
+(flow-chart-int tm-compiler `((,tm-example ,tm-example () () () ())))
