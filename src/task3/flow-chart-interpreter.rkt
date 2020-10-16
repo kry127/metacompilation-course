@@ -4,7 +4,6 @@
 (require "utility.rkt")
 (require racket/sandbox)
 
-
 ; define namespace
 (define-namespace-anchor a)
 (define ns (namespace-anchor->namespace a))
@@ -216,15 +215,15 @@
 
 
 ; launch flow-chart-mix on 'find name' program
-(define mixed-find-name (flow-chart-int flow-chart-mix `(,find_name ((name namelist) (valuelist)) (z (x y z)))))
+(define mixed-find-name (flow-chart-int (flow-chart-mix 'env) `(,find_name ((name namelist) (valuelist)) (z (x y z)))))
 ; print out program:
-; mixed-find-name
+mixed-find-name
 ; try to execute partially specialized program
 (flow-chart-int mixed-find-name '((1 2 3)))
 
 
 ; launch flow-chart-mix on Turing Machine interpreter
-(define mixed-TM-interpreter (flow-chart-int flow-chart-mix `(,turing_machine ; program to specialize
+(define mixed-TM-interpreter (flow-chart-int (flow-chart-mix 'env) `(,turing_machine ; program to specialize
                                                               (
                                                                (program prog instruction instruction-operator expr step) ; static
                                                                (left right element) ; dynamic
@@ -240,7 +239,7 @@ mixed-TM-interpreter
 ;(define tm-compiler (flow-chart-int flow-chart-mix-no-trick `(,flow-chart-mix ; program to specialize
 ;                                                              (
 ;                                                               (program division pp0) ; static
-;                                                               (pending marked residual env bb code labeled-blockresidual pp vs spec-state command
+;                                                               (pending marked residual env bb code labeled-block residual pp vs spec-state command
 ;                                                                        X X-newval newexpr predicate next-label new_predicate new_vs label_true label_false) ; dynamic
 ;                                                               )
 ;                                                              (,turing_machine ; = program
@@ -259,12 +258,13 @@ mixed-TM-interpreter
 
 
 ; second futamura projection, better than 'The Trick'!
-(define tm-compiler (flow-chart-int flow-chart-mix `(,flow-chart-mix ; program to specialize
+(define tm-compiler (flow-chart-int (flow-chart-mix 'env+) `(,(flow-chart-mix 'env) ; program to specialize
                                                               (
                                                                (program division pp0 pending-lables pending-lables-iter pp labeled-block bb
                                                                         command X expr
                                                                         predicate pp-true pp-false next-label
-                                                                        header) ; static
+                                                                        header
+                                                                        live-variables life-variable lval-true lvar-true lval-false lvar-false) ; static
                                                                (ppd pending marked residual env code vs spec-state
                                                                           X-newval newexpr new_predicate new_vs label_true label_false new_expr new_stmt) ; dynamic
                                                                )
@@ -273,7 +273,7 @@ mixed-TM-interpreter
                                                                 (program prog instruction instruction-operator expr step) ; static
                                                                 (left right element) ; dynamic)
                                                                 ) ; = division
-                                                               () () () () () () () () () () () () () () 
+                                                               () () () () () () () () () () () () () () () () () () () ()
                                                                ) ; initial values of static variables
                                                               )))
 
