@@ -2,9 +2,11 @@
 (module fc-mix racket
   
   (provide flow-chart-mix)
-  (provide envHasKey envAssoc setEnv updateEnv substitute is-evaluable try-eval find-blocks-in-pending life-static-variables)
+  (provide envHasKey envAssoc setEnv updateEnv substitute is-evaluable try-eval find-blocks-in-pending life-static-variables map-list)
 
   ;;;; ENV UTILITIES
+  (define (map-list lst1 lst2) (begin ; (println (format "(map-list ~s ~s)" lst1 lst2))
+                                      (map list lst1 (try-eval (list) lst2)))) ;dirty hacks mode ON
   ;; checks that key is in the environment
   (define (envHasKey name env) (match env
                                  [(cons e env) (if (equal? (car e) name) #t (envHasKey name env))]
@@ -58,7 +60,8 @@
   
   ;; tries to evaluate expression 'expr' within sandbox 'sandbox'. If it fails, returns it unchanged.
   (define (try-eval env expr) (let ([exprSub (substitute env expr #t)]) (with-handlers ([exn:fail?
-                                                                                      (λ (e) (begin (displayln e) exprSub))])
+                                                                                      (λ (e) (begin ;;; (displayln e)
+                                                                                                    exprSub))])
                                                                        (begin ;; (println (format "expr=~s, eval=~s, env=~s" exprSub (eval exprSub) env))
                                                                               (eval exprSub)))
                                 )
@@ -111,12 +114,12 @@
     (read program division vs0)
     (init
           (:= pp0 (caadr program)) ; [S] get initial label
-          (:= ,env (map list (car division) vs0)) ; [D] create initial env for computations (zip (car division) and vs0)
+          (:= ,env (map-list (car division) vs0)) ; [D] create initial env for computations (zip (car division) and vs0)
           (:= pending-lables (set-union (set pp0) (find-blocks-in-pending (cadr division) program))) ; [S] set of labeles for 'The Trick
           
           (:= live-variable (life-static-variables program pp0 ,env (cadr division))) ; [S] make live variable analysis on label pp0 in current env
           (:= lvar-true (set->list live-variable))                     ; [S] perform live variable analysis on initial label
-          (:= lval-true (substitute ,env lvar-true))                   ; [S] evaluate values of initial variables
+          (:= lval-true (try-eval (list) (substitute ,env lvar-true)))                   ; [S] evaluate values of initial variables
           (:= pending (set `(,pp0 ,lvar-true ,lval-true)))             ; [D] add initial specialization point to pending
           
           (:= marked (set)) ; [D] create set of marked specialized blocks
@@ -129,7 +132,7 @@
     (while-1-body-1 (:= spec-state (set-first pending))  ; [D] extract pair into 'spec-state'
                     (:= ppd (car spec-state))            ; [D] destruct 'spec-state' and extract 'ppd'
                     (:= vs (cdr spec-state))             ; [D] destruct 'spec-state' and extract 'vs'
-                    (:= ,env (updateEnv (map list (car vs) (cadr vs)) ,env))
+                    (:= ,env (updateEnv (map-list (car vs) (cadr vs)) ,env))
                     (:= pending    (set-rest pending))   ; and delete extracted 'spec-state' from pending set
                     (:= marked     (set-add marked spec-state)) ; also add extracted pair to 'marked' ones
                     ;; convert DYNAMIC ppd to static pp
@@ -245,11 +248,11 @@
        
          (:= live-variable (life-static-variables program pp-true ,env (cadr division))) ; [S] make live variable analysis on label pp-true in current env
          (:= lvar-true (set->list live-variable)) ; extract all live static variables from true label
-         (:= lval-true (substitute ,env lvar-true)) ;evaluate their values
+         (:= lval-true (try-eval (list) (substitute ,env lvar-true))) ;evaluate their values
          
          (:= live-variable (life-static-variables program pp-false ,env (cadr division))) ; [S] make live variable analysis on label pp-true in current env
          (:= lvar-false (set->list live-variable)) ; do the same for the false label
-         (:= lval-false (substitute ,env lvar-false))
+         (:= lval-false (try-eval (list) (substitute ,env lvar-false)))
                     
          (:= label_true `(,pp-true ,lvar-true ,lval-true))
          (:= label_false `(,pp-false ,lvar-false ,lval-false))
