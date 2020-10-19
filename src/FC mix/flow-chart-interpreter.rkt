@@ -18,6 +18,22 @@
    (found (return (car valuelist)))
    ))
 
+; 2. assign 'value' to variable named 'name'
+(define assign_name
+  '((read name value namelist valuelist)
+   (init (:= valuelist_left '())
+         (goto search))
+   (search (if (equal? name (car namelist)) found cont))
+   (cont (:= valuelist_left (cons (car valuelist) valuelist_left))
+         (:= valuelist (cdr valuelist))
+         (:= namelist (cdr namelist))
+         (goto search))
+   (found (:= valuelist_left (cons value valuelist_left))
+          (:= valuelist (cdr valuelist))
+          (return (append (reverse valuelist_left) valuelist)))
+   )
+  )
+
 ; Turing programs
 
 ; 1. Find first '0' charactrer and change it to '1'
@@ -32,6 +48,10 @@
 ; launch Flow Chart program with Racket interpreter
 (flow-chart-int find_name '(y (x y z) (1 2 3)))
 ; the expected output is '2
+(flow-chart-int assign_name '(y 5 (x y z) (1 2 3)))
+; the expected output is '(1 5 3)
+(flow-chart-int assign_name '(w 10 (x y w z w) (1 2 3 4 5)))
+; the expected output is '(1 2 10 4 5)
 
   
 ; launch Turing Machine with Flow Chart interpreter written on Racket
@@ -69,7 +89,7 @@ mixed-TM-interpreter
                                                                         command X expr
                                                                         predicate pp-true pp-false next-label
                                                                         header
-                                                                        life-variable lval-true lvar-true lval-false lvar-false) ; static
+                                                                        live-variable lval-true lvar-true lval-false lvar-false) ; static
                                                                (ppd pending marked residual env code vs spec-state
                                                                           X-newval newexpr new_predicate new_vs label_true label_false new_expr new_stmt) ; dynamic
                                                                )
@@ -98,7 +118,7 @@ compiled-FC-TM
                                                                         command X expr
                                                                         predicate pp-true pp-false next-label
                                                                         header
-                                                                        life-variable lval-true lvar-true lval-false lvar-false) ; static
+                                                                        live-variable lval-true lvar-true lval-false lvar-false) ; static
                                                                (ppd pending marked residual env-aux code vs spec-state
                                                                           X-newval newexpr new_predicate new_vs label_true label_false new_expr new_stmt) ; dynamic
                                                                )
@@ -108,7 +128,7 @@ compiled-FC-TM
                                                                         command X expr
                                                                         predicate pp-true pp-false next-label
                                                                         header
-                                                                        life-variable lval-true lvar-true lval-false lvar-false) ; static
+                                                                        live-variable lval-true lvar-true lval-false lvar-false) ; static
                                                                (ppd pending marked residual env code vs spec-state
                                                                           X-newval newexpr new_predicate new_vs label_true label_false new_expr new_stmt) ; dynamic
                                                                 ) ; = division
@@ -118,6 +138,9 @@ compiled-FC-TM
 
 (println "Sing, sing, sing, sing!")
 ; pretty print program (returns pair of mapping of real labels to new labels + relabeled program itself)
+(println "III mapping")
+(car (flow-chart-pretty-printer mixmixmix))
+(println "III program")
 (cadr (flow-chart-pretty-printer mixmixmix))
 
 (println "Everybody starts to sing")
@@ -132,9 +155,10 @@ compiled-FC-TM
                                                                ) ; initial values of static variables
                                                               )))
 ; print out program
-mixmixmixed-TM-compiler
+(cadr (flow-chart-pretty-printer mixmixmixed-TM-compiler))
+(println "When the body goes around")
 ; try to execute partially specialized program -- we'll get a compiled code :)
-;(define mixmixmix-compiled-TM-example (flow-chart-int mixmixmixed-TM-compiler `((,tm-example ,tm-example () () () ()))))
-;mixmixmix-compiled-TM-example
+(define mixmixmix-compiled-TM-example (flow-chart-int mixmixmixed-TM-compiler `((,tm-example ,tm-example () () () ()))))
+mixmixmix-compiled-TM-example
 ; (flow-chart-int mixmixmixed-TM-interpreter '((1 1 3 5 2 4 0)))
 

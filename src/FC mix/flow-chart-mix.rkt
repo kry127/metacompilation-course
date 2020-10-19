@@ -2,11 +2,12 @@
 (module fc-mix racket
   
   (provide flow-chart-mix)
-  (provide envHasKey envAssoc setEnv updateEnv substitute is-evaluable try-eval find-blocks-in-pending life-static-variables map-list)
+  (provide envHasKey envAssoc setEnv updateEnv substitute is-evaluable try-eval
+           find-blocks-in-pending life-static-variables life-static-variables-closure label-generator map-list)
 
   ;;;; ENV UTILITIES
   (define (map-list lst1 lst2) (begin ; (println (format "(map-list ~s ~s)" lst1 lst2))
-                                      (map list lst1 (try-eval (list) lst2)))) ;dirty hacks mode ON
+                                      (map list lst1 (try-eval (list) lst2 #f)))) ;dirty hacks mode ON
   ;; checks that key is in the environment
   (define (envHasKey name env) (match env
                                  [(cons e env) (if (equal? (car e) name) #t (envHasKey name env))]
@@ -32,7 +33,7 @@
   (define (substitute env expr [quoted #f]) (match expr
                                   [`',_ expr] ; ignore double quoted literals
                                   [expr (match expr ; otherwize apply induction over list constructor
-                                          [(cons head tail) (cons (substitute env head quoted) (substitute env tail quoted))]
+                                          [(cons head tail) `(,(substitute env head quoted) ,@(map (lambda (t) (substitute env t quoted)) tail))]
                                           [_ (if (envHasKey expr env)
                                                  (if quoted `',(envAssoc expr env) (envAssoc expr env))
                                                  expr)])
@@ -59,7 +60,7 @@
 
   
   ;; tries to evaluate expression 'expr' within sandbox 'sandbox'. If it fails, returns it unchanged.
-  (define (try-eval env expr) (let ([exprSub (substitute env expr #t)]) (with-handlers ([exn:fail?
+  (define (try-eval env expr [quoted #t]) (let ([exprSub (substitute env expr quoted)]) (with-handlers ([exn:fail?
                                                                                       (λ (e) (begin ;;; (displayln e)
                                                                                                     exprSub))])
                                                                        (begin ;; (println (format "expr=~s, eval=~s, env=~s" exprSub (eval exprSub) env))
@@ -98,6 +99,13 @@
                                                                            ]
                                                        ))
 
+  (define (life-static-variables-closure program dynamic) (λ (label env) (life-static-variables program label env dynamic (set))))
+
+  (define (label-generator label env live-variable-clos)
+    (let* ([live-variable (set->list (live-variable-clos label env))])
+      (list label live-variable (try-eval env live-variable #f))
+      ))
+
 ; 1. Flow chart specializer written on flow chart for flow chart
 
 ; data definition:
@@ -116,11 +124,13 @@
           (:= pp0 (caadr program)) ; [S] get initial label
           (:= ,env (map-list (car division) vs0)) ; [D] create initial env for computations (zip (car division) and vs0)
           (:= pending-lables (set-union (set pp0) (find-blocks-in-pending (cadr division) program))) ; [S] set of labeles for 'The Trick
-          
-          (:= live-variable (life-static-variables program pp0 ,env (cadr division))) ; [S] make live variable analysis on label pp0 in current env
-          (:= lvar-true (set->list live-variable))                     ; [S] perform live variable analysis on initial label
-          (:= lval-true (try-eval (list) (substitute ,env lvar-true)))                   ; [S] evaluate values of initial variables
-          (:= pending (set `(,pp0 ,lvar-true ,lval-true)))             ; [D] add initial specialization point to pending
+
+          (:= live-variable-clos (life-static-variables-closure program (cadr division))) ; [D] make closure of life-static-variables analysis
+          ;(:= live-variable (live-variable-clos pp0 ,env)) ; [D] make live variable analysis on label pp0 in current env
+          ;(:= lvar-true (set->list live-variable))                     ; [D] perform live variable analysis on initial label
+          ;(:= lval-true (substitute ,env lvar-true))                   ; [D] evaluate values of initial variables
+          ;(:= pending (set (list pp0 ,lvar-true ,lval-true)))             ; [D] add initial specialization point to pending
+          (:= pending (set (label-generator pp0 ,env live-variable-clos)))
           
           (:= marked (set)) ; [D] create set of marked specialized blocks
           (:= residual '()) ; [D] create stub of the specialized programm (result of the mix)
@@ -133,6 +143,8 @@
                     (:= ppd (car spec-state))            ; [D] destruct 'spec-state' and extract 'ppd'
                     (:= vs (cdr spec-state))             ; [D] destruct 'spec-state' and extract 'vs'
                     (:= ,env (updateEnv (map-list (car vs) (cadr vs)) ,env))
+                    ; (:= _ (println (format "current pending: ~s" pending)))
+                    ; (:= _ (println (format "current marked: ~s" marked)))
                     (:= pending    (set-rest pending))   ; and delete extracted 'spec-state' from pending set
                     (:= marked     (set-add marked spec-state)) ; also add extracted pair to 'marked' ones
                     ;; convert DYNAMIC ppd to static pp
@@ -246,16 +258,20 @@
          ; (:= X '())
          ; (:= expr '())
        
-         (:= live-variable (life-static-variables program pp-true ,env (cadr division))) ; [S] make live variable analysis on label pp-true in current env
-         (:= lvar-true (set->list live-variable)) ; extract all live static variables from true label
-         (:= lval-true (try-eval (list) (substitute ,env lvar-true))) ;evaluate their values
+         ;(:= live-variable (live-variable-clos pp-true ,env)) ; [S] make live variable analysis on label pp-true in current env
+         ;(:= lvar-true (set->list live-variable)) ; extract all live static variables from true label
+         ;(:= lval-true (substitute ,env lvar-true)) ;evaluate their values
          
-         (:= live-variable (life-static-variables program pp-false ,env (cadr division))) ; [S] make live variable analysis on label pp-true in current env
-         (:= lvar-false (set->list live-variable)) ; do the same for the false label
-         (:= lval-false (try-eval (list) (substitute ,env lvar-false)))
+         ;(:= live-variable (live-variable-clos pp-false ,env)) ; [S] make live variable analysis on label pp-true in current env
+         ;(:= lvar-false (set->list live-variable)) ; do the same for the false label
+         ;(:= lval-false (substitute ,env lvar-false))
                     
-         (:= label_true `(,pp-true ,lvar-true ,lval-true))
-         (:= label_false `(,pp-false ,lvar-false ,lval-false))
+         ;(:= label_true `(,pp-true ,lvar-true ,lval-true))
+         ;(:= label_false `(,pp-false ,lvar-false ,lval-false))
+         
+         (:= label_true (label-generator pp-true ,env live-variable-clos))
+         (:= label_false (label-generator pp-false ,env live-variable-clos))
+         
          (:= pending (if (set-member? marked label_true) pending  (set-add pending label_true)))
          (:= pending (if (set-member? marked label_false) pending (set-add pending label_false)))
          (:= new_expr `(if ,new_predicate ,label_true ,label_false))
