@@ -9,25 +9,23 @@
 ; Third Futamura projection
 (define mixmixmix (flow-chart-int (flow-chart-mix 'env+) `(,(flow-chart-mix 'env-aux) ; program to specialize
                                                               (
-                                                               (program division pp0 pending-lables pending-lables-iter pp labeled-block bb
+                                                               (program division pp0 pending-lables pending-lables-iter pp bb
                                                                         command X expr
                                                                         predicate pp-true pp-false next-label
                                                                         header) ; static
                                                                (ppd pending marked residual env-aux code vs spec-state
-                                                                          X-newval newexpr new_predicate new_vs label_true label_false new_expr new_stmt
-                                                                        live-variable lval-true lvar-true lval-false lvar-false) ; dynamic
+                                                                          label-true label-false) ; dynamic
                                                                )
                                                               (,(flow-chart-mix 'env) ; = program
                                                                (
-                                                               (program division pp0 pending-lables pending-lables-iter pp labeled-block bb
+                                                               (program division pp0 pending-lables pending-lables-iter pp bb
                                                                         command X expr
                                                                         predicate pp-true pp-false next-label
-                                                                        header
-                                                                        live-variable lval-true lvar-true lval-false lvar-false) ; static
+                                                                        header) ; static
                                                                (ppd pending marked residual env code vs spec-state
-                                                                          X-newval newexpr new_predicate new_vs label_true label_false new_expr new_stmt) ; dynamic
+                                                                          label-true label-false) ; dynamic
                                                                 ) ; = division
-                                                               () () () () () () () () () () () () () ()
+                                                               () () () () () () () () () () () () ()
                                                                ) ; initial values of static variables
                                                               )))
 
@@ -46,7 +44,7 @@
                                                                 (program prog instruction instruction-operator expr step) ; static
                                                                 (left right element) ; dynamic)
                                                                 ) ; = division
-                                                               () () () () () () () () () () () () () () () () () () ()
+                                                               () () () () () () () () () () () () ()
                                                                ) ; initial values of static variables
                                                               )))
 ; print out program
@@ -56,7 +54,7 @@
 (cadr (flow-chart-pretty-printer mixmixmixed-TM-compiler))
 (println "When the body goes around")
 ; try to execute partially specialized program -- we'll get a compiled code :)
-(define mixmixmix-compiled-TM-example (flow-chart-int mixmixmixed-TM-compiler `((,tm-example ,tm-example () () () ())) #t))
+(define mixmixmix-compiled-TM-example (flow-chart-int mixmixmixed-TM-compiler `((,tm-example ,tm-example () () () ()))))
 mixmixmix-compiled-TM-example
-; (flow-chart-int mixmixmixed-TM-interpreter '((1 1 3 5 2 4 0)))
+(flow-chart-int mixmixmix-compiled-TM-example '((1 1 3 5 2 4 0)))
 

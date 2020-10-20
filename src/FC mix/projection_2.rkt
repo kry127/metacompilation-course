@@ -9,20 +9,19 @@
 ; Second Futamura projection
 (define tm-compiler (flow-chart-int (flow-chart-mix 'env+) `(,(flow-chart-mix 'env) ; program to specialize
                                                               (
-                                                               (program division pp0 pending-lables pending-lables-iter pp labeled-block bb
+                                                               (program division pp0 pending-lables pending-lables-iter pp bb
                                                                         command X expr
                                                                         predicate pp-true pp-false next-label
                                                                         header) ; static
                                                                (ppd pending marked residual env code vs spec-state
-                                                                          X-newval newexpr new_predicate new_vs label_true label_false new_expr new_stmt
-                                                                          live-variable lval-true lvar-true lval-false lvar-false) ; dynamic
+                                                                          label-true label-false) ; dynamic
                                                                )
                                                               (,turing_machine ; = program
                                                                (
                                                                 (program prog instruction instruction-operator expr step) ; static
                                                                 (left right element) ; dynamic)
                                                                 ) ; = division
-                                                               () () () () () () () () () () () () () ()
+                                                               () () () () () () () () () () () () ()
                                                                ) ; initial values of static variables
                                                               )))
 

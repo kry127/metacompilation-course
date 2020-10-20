@@ -3,11 +3,10 @@
   
   (provide flow-chart-mix)
   (provide envHasKey envAssoc setEnv updateEnv substitute is-evaluable try-eval
-           find-blocks-in-pending life-static-variables life-static-variables-closure label-generator map-list)
+           find-blocks-in-pending label-generator-factory zip)
 
   ;;;; ENV UTILITIES
-  (define (map-list lst1 lst2) (begin ; (println (format "(map-list ~s ~s)" lst1 lst2))
-                                      (map list lst1 (try-eval (list) lst2 #f)))) ;dirty hacks mode ON
+  (define (zip lst1 lst2) (begin (map list lst1 lst2)))
   ;; checks that key is in the environment
   (define (envHasKey name env) (match env
                                  [(cons e env) (if (equal? (car e) name) #t (envHasKey name env))]
@@ -69,6 +68,8 @@
     )
   ;;;; ENV UTILITIES
 
+
+  ;;;; THE TRICK UTILITIES
   ; this function computes 'blocks-in-pending' set described in article
   (define (recbb dynamic bb) (match bb
                                                                              [(cons `(if ,expr ,label-true ,label-false) xs)
@@ -81,8 +82,13 @@
                                                                              ['() (set)]
                                                                               ))
   (define (find-blocks-in-pending dynamic program) (recbbs dynamic (cdr program)))
+  ;;;; THE TRICK UTILITIES
 
-  ; life variable analyzis : takes program, label and environment (staticvar |-> val mapping), returns static variables that are sound to this flow
+
+  
+  ;;;; LIFE VARIABLE ANALYSIS UTILITIES
+  
+  ; takes program, label and environment (staticvar |-> val mapping), returns static variables that are sound to this flow
   ; visited is a set of visited lables
   (define (life-static-variables program label env dynamic [visited (set)]) (if (set-member? visited label) (set) (life-static-variables-bb program (cdr (assoc label program)) env dynamic (set-add visited label))))
 
@@ -99,18 +105,21 @@
                                                                            ]
                                                        ))
 
-  (define (life-static-variables-closure program dynamic) (λ (label env) (life-static-variables program label env dynamic (set))))
-
-  (define (label-generator label env live-variable-clos)
-    (let* ([live-variable (set->list (live-variable-clos label env))])
-      (list label live-variable (try-eval env live-variable #f))
-      ))
+  ; Label generator based on life variable analyzis. This one is needed because of 'eval' inception in Futamura projections
+  
+  (define (label-generator-factory program dynamic)
+    (λ (label env)
+      (let* ([live-variable (set->list (life-static-variables program label env dynamic (set)))])
+        (list label live-variable (try-eval env live-variable #f))
+        ))
+    )
+  ;;;; LIFE VARIABLE ANALYSIS UTILITIES
 
 ; 1. Flow chart specializer written on flow chart for flow chart
 
 ; data definition:
 (define division-example '((a b c) (x y z))) ;; BOTH static and dynamic should be specified
-(define vs0-example '(0 1 "asdf"))
+(define vs0-example '(0 1 "asdf")) ; values mapped on '(a b c) specified earlier
 ; Returns tail from element, or #f if not found:
 ;  (member 'y division-example)
 
@@ -121,34 +130,31 @@
     ;; program input data + initialization block
     (read program division vs0)
     (init
-          (:= pp0 (caadr program)) ; [S] get initial label
-          (:= ,env (map-list (car division) vs0)) ; [D] create initial env for computations (zip (car division) and vs0)
+          (:= pp0 (caadr program))                               ; [S] get initial label
+          (:= ,env (zip (car division) vs0))                     ; [D] create initial env for computations (zip (car division) and vs0)
           (:= pending-lables (set-union (set pp0) (find-blocks-in-pending (cadr division) program))) ; [S] set of labeles for 'The Trick
 
-          (:= live-variable-clos (life-static-variables-closure program (cadr division))) ; [D] make closure of life-static-variables analysis
-          ;(:= live-variable (live-variable-clos pp0 ,env)) ; [D] make live variable analysis on label pp0 in current env
-          ;(:= lvar-true (set->list live-variable))                     ; [D] perform live variable analysis on initial label
-          ;(:= lval-true (substitute ,env lvar-true))                   ; [D] evaluate values of initial variables
-          ;(:= pending (set (list pp0 ,lvar-true ,lval-true)))             ; [D] add initial specialization point to pending
-          (:= pending (set (label-generator pp0 ,env live-variable-clos)))
+          ; Introducing lift variable. [L] are static by the nature, but should not apper at any state at all
+          (:= label-generator
+              (label-generator-factory program (cadr division))) ; [L] make closure of life-static-variables analysis
+          (:= pending (set (label-generator pp0 ,env)))          ; [D] create pending set which starts from initial lable and initial static values
           
-          (:= marked (set)) ; [D] create set of marked specialized blocks
-          (:= residual '()) ; [D] create stub of the specialized programm (result of the mix)
+          (:= marked (set))                                      ; [D] create set of marked specialized blocks
+          (:= residual '())                                      ; [D] create stub of the specialized programm (result of the mix)
           (goto while-1-cond)
           )
 
     ;; while pending != <empty> we have blocks 'pp' to specialize with static values from 'vs'
     (while-1-cond (if (set-empty? pending) halt while-1-body-1))
-    (while-1-body-1 (:= spec-state (set-first pending))  ; [D] extract pair into 'spec-state'
-                    (:= ppd (car spec-state))            ; [D] destruct 'spec-state' and extract 'ppd'
-                    (:= vs (cdr spec-state))             ; [D] destruct 'spec-state' and extract 'vs'
-                    (:= ,env (updateEnv (map-list (car vs) (cadr vs)) ,env))
-                    ; (:= _ (println (format "current pending: ~s" pending)))
-                    ; (:= _ (println (format "current marked: ~s" marked)))
-                    (:= pending    (set-rest pending))   ; and delete extracted 'spec-state' from pending set
-                    (:= marked     (set-add marked spec-state)) ; also add extracted pair to 'marked' ones
-                    ;; convert DYNAMIC ppd to static pp
-                    (:= pending-lables-iter pending-lables)
+    (while-1-body-1 (:= spec-state (set-first pending))          ; [D] extract pair into 'spec-state'
+                    (:= ppd (car spec-state))                    ; [D] destruct 'spec-state' and extract 'ppd'
+                    (:= vs (cdr spec-state))                     ; [D] destruct 'spec-state' and extract 'vs'
+                    ;; update environment: set static variables from acquired label
+                    (:= ,env (updateEnv (zip (car vs) (cadr vs)) ,env))
+                    (:= pending    (set-rest pending))           ; [D] and delete extracted 'spec-state' from pending set
+                    (:= marked     (set-add marked spec-state))  ; [D] also add extracted pair to 'marked' ones
+                    ;; convert DYNAMIC ppd to static pp (bounded static variaiton upon 'pending-lables')
+                    (:= pending-lables-iter pending-lables)      ; [S] iterator upon pending lables
                     (goto while-3-cond))
     
     (while-3-cond (if (set-empty? pending-lables-iter) error-no-such-static-label while-3-body))
@@ -159,22 +165,20 @@
                       while-3-cond
                   ))
     (while-1-body-2 
-                    ;; NOTE: inline function find basic block 'bb' by the name of the label 'pp'
-                    (:= labeled-block (assoc pp program)) ; extract labeled basic block
-                    (:= bb (cdr labeled-block))          ; extract basic block (with goto)
-                    ;; create buffer for commands 'code'. Algorithm suggests to make it labeled
-                    (:= code `((,pp . ,vs)))
-                    (goto while-2-cond) ; goto inner 'while-2' block (condition section)
+                    (:= bb (cdr (assoc pp program)))             ; [S] extract basic block (with goto, but without label)
+                    (:= code `((,pp . ,vs)))                     ; [D] create buffer for commands 'code' starting with label
+                    ;; goto inner 'while-2' block (condition section)
+                    (goto while-2-cond)
                     )
-    (while-1-body-3 (:= residual (append residual (list code)))  ; when cycle 'while-2' is over, add generated block into residual with label 'pp'
-                    (goto while-1-cond)                 ; then move back to 'while-1' condition checking
+    (while-1-body-3 (:= residual (append residual (list code)))  ; [D] when cycle 'while-2' is over, add generated block into residual with label 'pp'
+                    ;; then move back to 'while-1' condition checking
+                    (goto while-1-cond)
                     )
 
     ;; while bb != <empty> analyze every incoming statement and build 'code' specialized block
-    (while-2-cond ;(:= _ (begin (println ">>> while2.code=") (println code)))
-                  (if (empty? bb) while-1-body-3 while-2-body))
-    (while-2-body (:= command (car bb)) ; chop next command from basic block 'bb'
-                  (:= bb (cdr bb))      ; assign the rest to the basic block 'bb' itself
+    (while-2-cond (if (empty? bb) while-1-body-3 while-2-body))
+    (while-2-body (:= command (car bb))                          ; [S] chop next command from basic block 'bb'
+                  (:= bb (cdr bb))                               ; [S] assign the rest to the basic block 'bb' itself
                   (goto while-2-body-switch-case-1-1) ; switch-case on 'command' type
                   )
     ;; while-2-body-switch-case
@@ -196,36 +200,34 @@
         
         ;; := (assignment)
         (while-2-body-switch-case-1-assign
-         (:= X (cadr command))   ; extract a variable of assignment
-         (:= expr (caddr command)) ; extract an expression of assignment
-         (if (member X (car division)) ; if X is static by division (expr should be static)
+         (:= X (cadr command))            ; [S] extract a variable of assignment
+         (:= expr (caddr command))        ; [S] extract an expression of assignment
+         (if (member X (car division))    ; if variable in X is static by division (expr should be also static)
              while-2-body-switch-case-1-assign-static
              while-2-body-switch-case-1-assign-dynamic)
          )
         
         (while-2-body-switch-case-1-assign-static
-         (:= X-newval (try-eval ,env expr))
-         (:= ,env (setEnv X X-newval ,env))
+         (:= ,env (setEnv X (try-eval ,env expr) ,env))
          (goto while-2-cond)
          )
         (while-2-body-switch-case-1-assign-dynamic
-         (:= newexpr (substitute ,env expr #t))
-         (:= code (append code `((:= ,X ,newexpr))))
+         (:= code (append code `((:= ,X ,(substitute ,env expr #t))))) ; [D]
          (goto while-2-cond)
          )
 
         
         ;; goto
         (while-2-body-switch-case-1-goto
-         (:= next-label (cadr command)) ; extract new label name
+         (:= next-label (cadr command))   ; [S] extract new label name
          (goto while-2-transition-compression)
          )
 
          ;; if
         (while-2-body-switch-case-1-if
-         (:= predicate (cadr command))   ; extract a branching condition
-         (:= pp-true (caddr command))    ; true label
-         (:= pp-false (cadddr command))   ; false label
+         (:= predicate (cadr command))    ; [S] extract a branching condition
+         (:= pp-true (caddr command))     ; [S] true label
+         (:= pp-false (cadddr command))   ; [S] false label
          
          (if  (is-evaluable (cadr division) predicate) ; if X is static by division (!!!)
              while-2-body-switch-case-1-if-static
@@ -239,52 +241,29 @@
          )
 
         (while-2-body-switch-case-1-if-static-true
-         (:= next-label pp-true)
+         (:= next-label pp-true)          ; [S]
          (goto while-2-transition-compression)
          )
         (while-2-body-switch-case-1-if-static-false
-         (:= next-label pp-false)
+         (:= next-label pp-false)         ; [S]
          (goto while-2-transition-compression)
          )
         
         (while-2-body-switch-case-1-if-dynamic
-         (:= new_predicate (substitute ,env predicate #t))
          
-         ; reset as most static variables as we can
-         ; (:= pp '())
-         ; (:= labeled-block '())
-         ; (:= bb '())
-         ; (:= command '())
-         ; (:= X '())
-         ; (:= expr '())
-       
-         ;(:= live-variable (live-variable-clos pp-true ,env)) ; [S] make live variable analysis on label pp-true in current env
-         ;(:= lvar-true (set->list live-variable)) ; extract all live static variables from true label
-         ;(:= lval-true (substitute ,env lvar-true)) ;evaluate their values
+         (:= label-true (label-generator pp-true ,env))         ; [D]
+         (:= label-false (label-generator pp-false ,env))       ; [D]
          
-         ;(:= live-variable (live-variable-clos pp-false ,env)) ; [S] make live variable analysis on label pp-true in current env
-         ;(:= lvar-false (set->list live-variable)) ; do the same for the false label
-         ;(:= lval-false (substitute ,env lvar-false))
-                    
-         ;(:= label_true `(,pp-true ,lvar-true ,lval-true))
-         ;(:= label_false `(,pp-false ,lvar-false ,lval-false))
-         
-         (:= label_true (label-generator pp-true ,env live-variable-clos))
-         (:= label_false (label-generator pp-false ,env live-variable-clos))
-         
-         (:= pending (if (set-member? marked label_true) pending  (set-add pending label_true)))
-         (:= pending (if (set-member? marked label_false) pending (set-add pending label_false)))
-         (:= new_expr `(if ,new_predicate ,label_true ,label_false))
-         (:= code (append code `(,new_expr)))
+         (:= pending (if (set-member? marked label-true) pending  (set-add pending label-true)))  ; [D]
+         (:= pending (if (set-member? marked label-false) pending (set-add pending label-false))) ; [D]
+         (:= code (append code `((if ,(substitute ,env predicate #t) ,label-true ,label-false))))
          (goto while-2-cond))
 
          
          ;; return
         (while-2-body-switch-case-1-return
          (:= expr (cadr command))   ; extract return statement
-         (:= newexpr (substitute ,env expr #t)) ; specialize it
-         (:= new_stmt `(return ,newexpr)) ; construct new statement
-         (:= code (append code `(,new_stmt))) ; add it to 'poly'
+         (:= code (append code `((return ,(substitute ,env expr #t))))) ; add it to 'poly'
          (goto while-2-cond) ; and go back to while-2 loop
          )
          
@@ -293,8 +272,7 @@
 
           ;; input parameter: next-label
           (while-2-transition-compression
-           (:= labeled-block (assoc next-label program)) ; extract labeled basic block
-           (:= bb (cdr labeled-block))          ; extract basic block (with goto)
+           (:= bb (cdr (assoc next-label program)))          ; extract basic block (with goto)
            (:= next-label '()) ; clear next-label when exiting function 'while-2-transition-compression'
            ; transition compression happened
            (goto while-2-cond)
