@@ -1,9 +1,9 @@
 #lang racket
 
+(require "utility.rkt")
 (require "int-rkt-fc.rkt")
 (require "int-fc-tur.rkt")
 (require "flow-chart-mix.rkt")
-(require "utility.rkt")
 (require "program_examples.rkt")
 
 
@@ -16,8 +16,14 @@
                                                               ) ; division
                                                               (,tm-example ,tm-example () () () ()) ; initial values of static variables
                                                               ) #f))
+
+
+(println "The result of first projection on Turing Machine interpreter with simple TM program 'mix int-TM-on-FC TM-example'")
 ; print out program
 mixed-TM-interpreter
 ; try to execute partially specialized program
-(flow-chart-int mixed-TM-interpreter '((1 1 3 5 2 4 0)))
-; expected to overwrite first 0->1, i.e.: '(1 1 3 5 2 4 1)
+(define tm-input '((1 1 3 5 2 4 0)))
+(define tm-output '(1 1 3 5 2 4 1))
+(println (format "The result of launch of program on input ~s:" tm-input))
+(println (format "Expected output: ~s" tm-output))
+(flow-chart-int mixed-TM-interpreter tm-input)

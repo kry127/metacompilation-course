@@ -26,10 +26,18 @@
                                                               )))
 
 ; pretty print program (returns pair of mapping of real labels to new labels + relabeled program itself)
-(flow-chart-pretty-printer tm-compiler)
+;(flow-chart-pretty-printer tm-compiler)
+(println "The result of second projection on Turing Machine interpreter 'mix mix int-TM-on-FC'")
+(cadr (flow-chart-pretty-printer tm-compiler)) ; but we'd like to see the result only
+
+(println "The result of compilation of simple 'tm-example' program from Turing to FC (makes closest change 0->1):")
 ; check that compiler converts 'tm-example' program from turing language to flow-chart language
 (define compiled-FC-TM (flow-chart-int tm-compiler `((,tm-example ,tm-example () () () ()))))
 compiled-FC-TM
+
 ; check that compiled program makes what it does
-(flow-chart-int compiled-FC-TM '((8 8 99 -5 6 0 2 5 1)))
-; expected: '(8 8 99 -5 6 1 2 5 1)
+(define tm-input '((8 8 99 -5 6 0 2 5 1)))
+(define tm-output '(8 8 99 -5 6 1 2 5 1))
+(println (format "The result of launch of program on input ~s:" tm-input))
+(println (format "Expected output: ~s" tm-output))
+(flow-chart-int compiled-FC-TM tm-input)

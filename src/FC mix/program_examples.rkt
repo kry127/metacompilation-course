@@ -5,7 +5,7 @@
   (require "flow-chart-mix.rkt")
   (require "utility.rkt")
   
-  (provide find_name assign_name tm-example tm-left-expander)
+  (provide find_name assign_name tm-example tm-left-expander int-fc-fc)
 
   ;; Turing programs
 
@@ -43,26 +43,68 @@
      )
     )
   ; 3. Flow Chart interpreter (self-interpreter)
+  ; uses some functions in util
   (define int-fc-fc
-    '((read program valuelist)
-      (init (:= namelist (car program))
-            (:= program (cdr program))
-            (goto assign-loop))
-
-      ; find-name program
-      ;   input: name -- name of the key
-      ;   output: value -- corresponding value
-      (find-name
-            (:= find-name-namelist namelist)
-            (:= find-name-valuelist valuelist)
-            (goto find-name-search))
-      (find-name-search (if (equal? name (car find-name-namelist)) find-name-found find-name-cont))
-      (find-name-cont (:= find-name-valuelist (cdr find-name-valuelist))
-            (:= find-name-namelist (cdr find-name-namelist))
-            (goto find-name-search))
-      (find-name-found (return (car valuelist)))
-      ; find-name program
-      ))
+    '((read program valuelist)                            ; [program -> S, valuelist -> D]
+      (init (:= namelist (cdar program))                  ; [S] extract name of input variables of program
+            (:= pending-lables (set->list (set-union (set (caadr program)) (find-blocks-in-pending #f program))))         ; [S] list of pending lables
+            (:= program (cdr program))                    ; [S] reassign the rest, program -- is set of basic blocks
+            (:= fc-environment (zip namelist valuelist))  ; [D] environment, in which assignments are stored
+            (:= label (caar program))                     ; [D] next label of the program
+            (goto exec-label))
+      
+      ; execute next label (input: label)
+      (exec-label
+            ; convert DYNAMIC label to static label-s (bounded static variaiton upon all lables)
+            (:= pending-lables-iter pending-lables)    ; [S] iterator upon pending lables
+            (goto exec-label-trick-cond))
     
+    (exec-label-trick-cond (if (empty? pending-lables-iter) error-no-such-static-label exec-label-trick-body))
+    (error-no-such-static-label (return (format "FC-FC interpreter: NO SUCH STATIC LABEL ~s" label)))
+    (exec-label-trick-body (:= label-s (car pending-lables-iter))
+                           (:= pending-lables-iter (cdr pending-lables-iter))
+                           (if (equal? label-s label)
+                             exec-label-s
+                             exec-label-trick-cond
+                           ))
+    
+      (exec-label-s (:= bb (cdr (assoc label-s program)))     ; [S] extract basic block
+                    (:= label-s '())
+                    (goto exec-bb))
+      ; execute current commands in basic block (input: bb)
+      (exec-bb (:= cmd (car bb)) ; [S]
+               (:= bb (cdr bb))  ; [S]
+               (goto exec-bb-switch-case-1))
 
+      
+      ; find appropriate handler for command type
+      (exec-bb-switch-case-1 (if (equal? (car cmd) ':=    )     exec-bb-:= exec-bb-switch-case-2))
+      (exec-bb-switch-case-2 (if (equal? (car cmd) 'if    )     exec-bb-if exec-bb-switch-case-3))
+      (exec-bb-switch-case-3 (if (equal? (car cmd) 'goto  )   exec-bb-goto exec-bb-switch-case-4))
+      (exec-bb-switch-case-4 (if (equal? (car cmd) 'return) exec-bb-return error-no-such-command))
+      (error-no-such-command (return (format "FC-FC interpreter: NO SUCH COMMAND ~s in block ~s" cmd (assoc label-s program))))
+      
+      (exec-bb-:=
+       (:= fc-environment (setEnv (cadr cmd) (try-eval fc-environment (caddr cmd)) fc-environment)) ; [D] update environment
+       (goto exec-bb)
+       )
+
+      (exec-bb-if
+         (:= label (if (try-eval fc-environment (cadr cmd)) (caddr cmd) (cadddr cmd))) ; [D] extract next label
+         (goto exec-label) ; launch next computation (input parameter 'label' already set)
+       )
+      
+      (exec-bb-goto
+         (:= label-s (cadr cmd))
+         (goto exec-label-s) ; launch next computation (input parameter 'label' already set)
+       )
+
+      (exec-bb-return
+         (return (try-eval fc-environment (cadr cmd))) ; return the result of interpretation
+       )
+      
+      )
+    
+    )
+                  
 )

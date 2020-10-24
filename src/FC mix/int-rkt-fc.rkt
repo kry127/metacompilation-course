@@ -1,12 +1,14 @@
 ;; This module provides Flow Chart interpreter written in Racket
 (module int-fc-tur racket
   
-  (require "int-fc-tur.rkt")
-  (require "flow-chart-mix.rkt")
-  
   ; define namespace
   (define-namespace-anchor a)
   (define ns (namespace-anchor->namespace a))
+  
+  
+  (require "utility.rkt")
+  (require "int-fc-tur.rkt")
+  (require "flow-chart-mix.rkt")
   
 
   (provide flow-chart-int)
