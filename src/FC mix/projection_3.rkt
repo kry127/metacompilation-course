@@ -126,7 +126,7 @@ mixmixmix-mixed-compiled-tm-example
 (define mixmixmix-comp-fc-fc (flow-chart-int mixmixmix `((,int-fc-fc ; = program
                                                                (
                                                                 (program namelist bb cmd
-                                                                         pending-lables pending-lables-iter label-s) ; static
+                                                                         pending-lables pending-lables-iter label-s label-true label-false) ; static
                                                                 (fc-environment label valuelist) ; dynamic)
                                                                 ) ; = division
                                                                () () () () () () () () () () () () ()
@@ -136,7 +136,7 @@ mixmixmix-mixed-compiled-tm-example
 (println "mixmixmix-comp-fc-fc = (mix mix mix) int-FC-on-FC")
 (cadr (flow-chart-pretty-printer mixmixmix-comp-fc-fc))
 ; generate compiler
-(define mixmixmix-comp-fc-fc-turing_machine (flow-chart-int mixmixmix-comp-fc-fc `((,turing_machine ,turing_machine () () () () ()))))
+(define mixmixmix-comp-fc-fc-turing_machine (flow-chart-int mixmixmix-comp-fc-fc `((,turing_machine ,turing_machine () () () () () () ()))))
 
 (println "mixmixmix-comp-fc-fc-turing_machine = (mix mix mix) int-FC-on-FC turing_machine")
 ;(map (λ (row) (append (cdr row) (list (car row)))) (hash->list (car (flow-chart-pretty-printer mixmixmix-comp-fc-fc-turing_machine))))

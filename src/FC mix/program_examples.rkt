@@ -50,14 +50,15 @@
             (:= pending-lables (set->list (set-union (set (caadr program)) (find-blocks-in-pending #f program))))         ; [S] list of pending lables
             (:= program (cdr program))                    ; [S] reassign the rest, program -- is set of basic blocks
             (:= fc-environment (zip namelist valuelist))  ; [D] environment, in which assignments are stored
-            (:= label (caar program))                     ; [D] next label of the program
-            (goto exec-label))
+            (:= label-s (caar program))                   ; [S] next label of the program
+            (goto exec-label-s) ; trick: we know label-s at compile-time :))
+            )
       
-      ; execute next label (input: label)
-      (exec-label
-            ; convert DYNAMIC label to static label-s (bounded static variaiton upon all lables)
-            (:= pending-lables-iter pending-lables)    ; [S] iterator upon pending lables
-            (goto exec-label-trick-cond))
+      ; [History] execute next label (input: label)
+      ; (exec-label
+      ;       ; convert DYNAMIC label to static label-s (bounded static variaiton upon all lables)
+      ;       (:= pending-lables-iter pending-lables)    ; [S] iterator upon pending lables
+      ;       (goto exec-label-trick-cond))
     
     (exec-label-trick-cond (if (empty? pending-lables-iter) error-no-such-static-label exec-label-trick-body))
     (error-no-such-static-label (return (format "FC-FC interpreter: NO SUCH STATIC LABEL ~s" label)))
@@ -69,7 +70,6 @@
                            ))
     
       (exec-label-s (:= bb (cdr (assoc label-s program)))     ; [S] extract basic block
-                    (:= label-s '())
                     (goto exec-bb))
       ; execute current commands in basic block (input: bb)
       (exec-bb (:= cmd (car bb)) ; [S]
@@ -90,8 +90,17 @@
        )
 
       (exec-bb-if
-         (:= label (if (try-eval fc-environment (cadr cmd)) (caddr cmd) (cadddr cmd))) ; [D] extract next label
-         (goto exec-label) ; launch next computation (input parameter 'label' already set)
+         ; naive implementation:
+         ;(:= label (if (try-eval fc-environment (cadr cmd)) (caddr cmd) (cadddr cmd))) ; [D] extract next label
+         ;(goto exec-label-trick-cond) ; launch next computation (input parameter 'label' already set)
+
+         ; hack with mocking 'pending-lables-iter' with only two lables :))
+         (:= label-true (caddr cmd))
+         (:= label-false (cadddr cmd))
+         (:= label (if (try-eval fc-environment (cadr cmd)) label-true label-false)) ; [D] extract next label
+         (:= pending-lables-iter (list label-true label-false))    ; [S] iterator upon pending lables
+         (goto exec-label-trick-cond) ; launch next computation (input parameter 'label' already set)
+       
        )
       
       (exec-bb-goto
