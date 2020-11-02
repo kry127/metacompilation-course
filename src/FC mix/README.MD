@@ -2,19 +2,26 @@
 
 ### How to check?
 
-1. To check first projection you need only to launch `Projection 1.rkt` in `drracket` IDE. Just see output :)
-2. To check second projection you need to launch `Projection 2 .rkt` in `drracket`.
-3. To check third futamura projection you need to launch `Projection 3.rkt` in `drracket`.
-4. To see, what happens when you apply `mix (mix mix)` to Flow Chart interpreter, still go to `Projections 3.rkt` and see outputs. This has ben solely done with purpose to utilize intensive-computational `mix (mix mix)` resource. It is recommended to Ctrl+C output and analyze it in your handy editor (because it's long).
+In all points below you just need to see outputs of the program
+
+Projections applied to **FC-INT-TM**:
+1. To check first projection you need only to launch `projection_1.rkt` in `drracket` IDE. Just see output :)
+2. To check second projection you need to launch `projection_2 .rkt` in `drracket`.
+3. To check third futamura projection you need to launch `projection_3.rkt` in `drracket`.
+
+Then, those projections were applied to **FC-INT-FC**:
+1. To check first projection you need only to launch `fc_rojection_1.rkt` in `drracket`.
+2. To check second projection you need to launch `fc_projection_2.rkt` in `drracket`.
+3. To check third futamura projection you need to launch `fc_projection_3.rkt` in `drracket`.
 
 ### Projection sizes
-1. First projecton: *3* basic blocks. Originally: 4 turing commands, 20 basic blocks of tm-int-fc
-2. Second projection: *26* basic blocks. Originally: *20* basic blocks of tm-int-fs. Overhead: *+6* blocks
-3. Third projection: *37* basic blocks. Originally: 28 blocks of mix.
-3. `mix' = (mix mix mix) mix`: *36* basic blocks. Originally: *28* basic blocks of mix. Overhead: *+8* blocks.
+1. First projecton: *4* basic blocks. Originally: 4 turing commands, 20 basic blocks of tm-int-fc
+2. Second projection: *27* basic blocks. Originally: *20* basic blocks of tm-int-fs. Overhead: *+7* blocks
+3. Third projection: *38* basic blocks. Originally: 28 blocks of mix.
+3. `mix' = (mix mix mix) mix`: *37* basic blocks. Originally: *28* basic blocks of mix. Overhead: *+9* blocks.
    > In my opinion, this is pretty good result!. Also, this `mix'` produces alpha-equivalent program
-4. `fc-comp-fc = (mix mix mix) fc-int-fc`: *19* basic blocks. Originally: 20 basic blocks of fc-int-fc. Overhead: *-1* blocks.
-4. `fc-int-tm' = fc-comp-fc fc-int-tm`: *28* basic blocks. Originally: 20 basic blocks of tm-int-fc. Overhead: *+8* blocks. Diff with second projection: *+2* blocks!!
+4. `fc-comp-fc = (mix mix mix) fc-int-fc`: *20* basic blocks. Originally: 20 basic blocks of fc-int-fc. Overhead: *0* blocks.
+4. `fc-int-tm' = fc-comp-fc fc-int-tm`: *29* basic blocks. Originally: 20 basic blocks of tm-int-fc. Overhead: *+9* blocks. Diff with second projection: *+2* blocks!!
    > Pretty printing is needed to get rid of environment variable :))
    
 All projections are working correctly
